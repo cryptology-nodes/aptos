@@ -1,85 +1,110 @@
 #!/bin/bash
-
-sleep 1 && curl -s https://raw.githubusercontent.com/cryptology-nodes/main/main/logo.sh |  bash && sleep 2
-
 exists()
 {
   command -v "$1" >/dev/null 2>&1
 }
 if exists curl; then
-	echo ''
+echo ''
 else
-  sudo apt install curl -y < "/dev/null"
+  sudo apt update && sudo apt install curl -y < "/dev/null"
 fi
-
-curl -s https://api.nodes.guru/swap8.sh | bash
-sudo apt update && sudo apt install git -y
-cd $HOME
-rm -rf aptos-core
-sudo mkdir -p /opt/aptos/etc/ /opt/aptos/data .aptos/config .aptos/key
-git clone https://github.com/aptos-labs/aptos-core.git
-cd aptos-core
-git checkout origin/devnet &>/dev/null
-echo y | ./scripts/dev_setup.sh
-source ~/.cargo/env
-cargo build -p aptos-node --release
-cargo build -p aptos-operational-tool --release
-mv  ~/aptos-core/target/release/aptos-node /usr/local/bin
-mv  ~/aptos-core/target/release/aptos-operational-tool /usr/local/bin
-#/usr/local/bin/aptos-operational-tool generate-key --encoding hex --key-type x25519 --key-file ~/.aptos/key/private-key.txt
-if [ -f ~/.aptos/key/private-key.txt ]; then
-    echo ""
-else 
-    /usr/local/bin/aptos-operational-tool generate-key --encoding hex --key-type x25519 --key-file ~/.aptos/key/private-key.txt
+bash_profile=$HOME/.bash_profile
+if [ -f "$bash_profile" ]; then
+    . $HOME/.bash_profile
 fi
-
-if [ -f ~/.aptos/config/peer-info.yaml ]; then
-    echo ""
-else 
-    /usr/local/bin/aptos-operational-tool extract-peer-from-file --encoding hex --key-file ~/.aptos/key/private-key.txt --output-file ~/.aptos/config/peer-info.yaml &>/dev/null
-fi
-
-#/usr/local/bin/aptos-operational-tool extract-peer-from-file --encoding hex --key-file ~/.aptos/key/private-key.txt --output-file ~/.aptos/config/peer-info.yaml &>/dev/null
-cp ~/aptos-core/config/src/config/test_data/public_full_node.yaml ~/.aptos/config/
-wget -q -O /opt/aptos/etc/genesis.blob https://devnet.aptoslabs.com/genesis.blob
-wget -q -O /opt/aptos/etc/waypoint.txt https://devnet.aptoslabs.com/waypoint.txt
-PRIVKEY=$(cat ~/.aptos/key/private-key.txt)
-PEER=$(sed -n 2p ~/.aptos/config/peer-info.yaml | sed 's/.$//')
-sed -i "s/genesis_file_location: .*/genesis_file_location: \"\/opt\/aptos\/etc\/genesis.blob\"/" $HOME/.aptos/config/public_full_node.yaml
-sed -i "s/from_file: .*/from_file: \"\/opt\/aptos\/etc\/waypoint.txt\"/" $HOME/.aptos/config/public_full_node.yaml
-sleep 2 
-sed -i.bak -e "s/127.0.0.1/0.0.0.0/" $HOME/.aptos/config/public_full_node.yaml
-sed -i '/listen_address: \"*\"/a\
-      identity:\
-        type: "from_config"\
-        key: "'$PRIVKEY'"\
-        peer_id: "'$PEER'"' $HOME/.aptos/config/public_full_node.yaml
-
-
-echo "[Unit]
-Description=Aptos
-After=network.target
-
-[Service]
-User=$USER
-Type=simple
-ExecStart=/usr/local/bin/aptos-node -f $HOME/.aptos/config/public_full_node.yaml
-Restart=on-failure
-LimitNOFILE=65535
-
-[Install]
-WantedBy=multi-user.target" > $HOME/aptosd.service
-mv $HOME/aptosd.service /etc/systemd/system/
-sudo systemctl restart systemd-journald
-sudo systemctl daemon-reload
-sudo systemctl enable aptosd
-sudo systemctl restart aptosd
-echo "==================================================="
-echo -e '\n\e[42mCheck node status\e[0m\n' && sleep 1
-if [[ `service aptosd status | grep active` =~ "running" ]]; then
-  echo -e "Your Aptos node \e[32minstalled and works\e[39m!"
-  echo -e "You can check node status by the command \e[7mservice aptosd status\e[0m"
-  echo -e "Press \e[7mQ\e[0m for exit from status menu"
+sleep 1 && curl -s https://raw.githubusercontent.com/cryptology-nodes/main/main/logo.sh |  bash && sleep 2
+if grep -q avx2 /proc/cpuinfo; then
+	echo ""
 else
-  echo -e "Your Aptos node \e[31mwas not installed correctly\e[39m, please reinstall."
+	echo -e "\e[31mInstallation is not possible, your server does not support AVX2, change your server and try again.\e[39m"
+	exit
 fi
+if ss -tulpen | awk '{print $5}' | grep -q ":80$" ; then
+	echo -e "\e[31mInstallation is not possible, port 80 already in use.\e[39m"
+	exit
+else
+	echo ""
+fi
+if ss -tulpen | awk '{print $5}' | grep -q ":6180$" ; then
+	echo -e "\e[31mInstallation is not possible, port 6180 already in use.\e[39m"
+	exit
+else
+	echo ""
+fi
+if ss -tulpen | awk '{print $5}' | grep -q ":6181$" ; then
+	echo -e "\e[31mInstallation is not possible, port 6181 already in use.\e[39m"
+	exit
+else
+	echo ""
+fi
+if ss -tulpen | awk '{print $5}' | grep -q ":9101$" ; then
+	echo -e "\e[31mInstallation is not possible, port 9101 already in use.\e[39m"
+	exit
+else
+	echo ""
+fi
+if [ ! $APTOS_NODENAME ]; then
+read -p "Enter node name: " APTOS_NODENAME
+echo 'export APTOS_NODENAME='\"${APTOS_NODENAME}\" >> $HOME/.bash_profile
+fi
+echo 'source $HOME/.bashrc' >> $HOME/.bash_profile
+echo "export WORKSPACE=\"$HOME/.aptos\"" >>$HOME/.bash_profile
+. $HOME/.bash_profile
+
+apt update && apt install git sudo unzip wget -y
+#install docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+#install docker-compose
+curl -SL https://github.com/docker/compose/releases/download/v2.5.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+ 
+#install aptos
+wget -qO aptos-cli.zip https://github.com/aptos-labs/aptos-core/releases/download/aptos-cli-0.2.0/aptos-cli-0.2.0-Ubuntu-x86_64.zip
+unzip -o aptos-cli.zip
+chmod +x aptos
+mv aptos /usr/local/bin 
+ 
+#create folder,download config    
+IPADDR=$(curl ifconfig.me) 
+sleep 2   
+mkdir -p $HOME/.aptos
+cd $HOME/.aptos
+wget -O $HOME/.aptos/docker-compose.yaml https://raw.githubusercontent.com/aptos-labs/aptos-core/main/docker/compose/aptos-node/docker-compose.yaml
+wget -O $HOME/.aptos/validator.yaml https://raw.githubusercontent.com/aptos-labs/aptos-core/main/docker/compose/aptos-node/validator.yaml
+#wget -O fullnode.yaml https://raw.githubusercontent.com/aptos-labs/aptos-core/main/docker/compose/aptos-node/fullnode.yaml
+
+aptos genesis generate-keys --assume-yes --output-dir $HOME/.aptos
+
+aptos genesis set-validator-configuration \
+    --keys-dir $HOME/.aptos --local-repository-dir $HOME/.aptos \
+    --username $APTOS_NODENAME \
+    --validator-host $IPADDR:6180
+    
+#aptos key generate --assume-yes --output-file root_key.txt
+#KEYTXT=$(cat ~/.aptos/root_key.txt.pub) 
+#KEY="0x"$KEYTXT 
+
+echo "---
+root_key: \"F22409A93D1CD12D2FC92B5F8EB84CDCD24C348E32B3E7A720F3D2E288E63394\"
+users:
+  - \"$APTOS_NODENAME\"
+chain_id: 40
+min_stake: 0
+max_stake: 100000
+min_lockup_duration_secs: 0
+max_lockup_duration_secs: 2592000
+epoch_duration_secs: 86400
+initial_lockup_timestamp: 1656615600
+min_price_per_gas_unit: 1
+allow_new_validators: true" >layout.yaml
+    
+wget -O $HOME/.aptos/framework.zip https://github.com/aptos-labs/aptos-core/releases/download/aptos-framework-v0.2.0/framework.zip
+unzip -o framework.zip
+aptos genesis generate-genesis --assume-yes --local-repository-dir $HOME/.aptos --output-dir $HOME/.aptos
+sleep 2
+docker-compose down -v
+sleep 2
+docker compose up -d
+echo -e "Your Aptos node \e[32minstalled and works\e[39m!"
